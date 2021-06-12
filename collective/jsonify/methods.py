@@ -69,12 +69,19 @@ def get_children(self):
 
     children = []
     if getattr(aq_base(self), 'objectIds', False):
-        children = self.objectIds()
+        values = self.values()
         # Btree based folders return an OOBTreeItems
         # object which is not serializable
         # Thus we need to convert it to a list
-        if not isinstance(children, list):
-            children = [item for item in children]
+        children = []
+        for child in values:
+            children.append({
+                'id': child.id,
+                'title': child.Title(),
+                'children_url': '{}/get_children'.format(child.absolute_url()),
+                'item_url': '{}/get_item'.format(child.absolute_url())
+            })
+            
     self.REQUEST.response.setHeader("Content-type", "application/json")
     return json.dumps(children)
 
