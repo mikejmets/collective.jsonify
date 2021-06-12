@@ -77,7 +77,7 @@ def get_children(self):
         for child in values:
             children.append({
                 'id': child.id,
-                'title': child.Title(),
+                'title': child.title,
                 'children_url': '{}/get_children'.format(child.absolute_url()),
                 'item_url': '{}/get_item'.format(child.absolute_url())
             })
