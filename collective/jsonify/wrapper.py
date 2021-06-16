@@ -639,10 +639,12 @@ class Wrapper(dict):
                         workflow_history[w][i]['comments'] =\
                             self.decode(workflow_history[w][i]['comments'])
                     if 'review_history' in workflow_history[w][i].keys():
-                        for j, w3 in enumerate(workflow_history[w][i]['review_history']):
-                            if 'time' in workflow_history[w][i]['review_history'][j].keys():
-                                workflow_history[w][i]['review_history'][j]['time'] = str(
-                                    workflow_history[w][i]['review_history'][j]['time'])
+                        workflow_history[w][i]['review_history'] = []
+                        # This causes indefinite loop for some objects
+                        # for j, w3 in enumerate(workflow_history[w][i]['review_history']):
+                        #     if 'time' in workflow_history[w][i]['review_history'][j].keys():
+                        #         workflow_history[w][i]['review_history'][j]['time'] = str(
+                        #             workflow_history[w][i]['review_history'][j]['time'])
             self['_workflow_history'] = workflow_history
 
     def get_position_in_parent(self):
