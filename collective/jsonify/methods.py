@@ -9,7 +9,9 @@ except:
         return base64.b64decode(s)
 import pprint
 import sys
+import os
 import traceback
+from urllib2 import urlopen
 
 try:
     import simplejson as json
@@ -36,10 +38,11 @@ def get_item(self):
     try:
         context_dict = Wrapper(self)
     except Exception, e:
+        cwd = os.getcwd()
         etype = sys.exc_info()[0]
         tb = pprint.pformat(traceback.format_tb(sys.exc_info()[2]))
-        return 'ERROR: exception wrapping object: %s: %s\n%s' % (
-            etype, str(e), tb
+        return 'ERROR: %s exception wrapping object: %s: %s\n%s' % (
+            cwd, etype, str(e), tb
         )
 
     passed = False
@@ -67,14 +70,33 @@ def get_children(self):
     """
     from Acquisition import aq_base
 
+    portal_type = self.REQUEST.form.get('portal_type', None)
     children = []
     if getattr(aq_base(self), 'objectIds', False):
-        children = self.objectIds()
+        values = self.values()
         # Btree based folders return an OOBTreeItems
         # object which is not serializable
         # Thus we need to convert it to a list
-        if not isinstance(children, list):
-            children = [item for item in children]
+        children = []
+        for child in values:
+            if portal_type is None or (hasattr(child, 'portal_type') and child.portal_type == portal_type):
+                adict = {
+                    'id': child.id,
+                    'title': child.title,
+                    'children_url': '{}/get_children'.format(child.absolute_url()),
+                    'item_url': '{}/get_item'.format(child.absolute_url())
+                }
+                if portal_type == 'MemberContainer':
+                    url = adict['item_url']
+                    try:
+                        response = urlopen(url)
+                        values = response.read()
+                        context_dict = json.loads(values)
+                        adict['review'] = context_dict['review']
+                    except Exception as e:
+                        raise RuntimeError('Error acceessing id {} url {}: {}'.format(child.id, url, e))
+                children.append(adict)
+            
     self.REQUEST.response.setHeader("Content-type", "application/json")
     return json.dumps(children)
 
@@ -83,6 +105,7 @@ def get_catalog_results(self):
     """Returns a list of paths of all items found by the catalog.
        Query parameters can be passed in the request.
     """
+    print('get_catalog_results')
     if not hasattr(self.aq_base, 'unrestrictedSearchResults'):
         return
     query = self.REQUEST.form.get('catalog_query', None)

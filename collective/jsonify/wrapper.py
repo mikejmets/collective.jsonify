@@ -1,5 +1,6 @@
 from Acquisition import aq_base
 from DateTime import DateTime
+import json
 from Products.CMFCore.utils import getToolByName
 import datetime
 import os
@@ -54,6 +55,9 @@ class Wrapper(dict):
         for method in dir(self):
             if method.startswith('get_'):
                 getattr(self, method)()
+
+        if self.context.portal_type == 'MemberContiner':
+            self.get_member_container_review()
 
     def providedBy(self, iface, ctx):
         # Handle zope.interface and Interface interfaces.
@@ -638,6 +642,13 @@ class Wrapper(dict):
                     if 'comments' in workflow_history[w][i].keys():
                         workflow_history[w][i]['comments'] =\
                             self.decode(workflow_history[w][i]['comments'])
+                    if 'review_history' in workflow_history[w][i].keys():
+                        workflow_history[w][i]['review_history'] = []
+                        # This causes indefinite loop for some objects
+                        # for j, w3 in enumerate(workflow_history[w][i]['review_history']):
+                        #     if 'time' in workflow_history[w][i]['review_history'][j].keys():
+                        #         workflow_history[w][i]['review_history'][j]['time'] = str(
+                        #             workflow_history[w][i]['review_history'][j]['time'])
             self['_workflow_history'] = workflow_history
 
     def get_position_in_parent(self):
@@ -917,3 +928,202 @@ class Wrapper(dict):
                 self['_old_paths'] = [r[len(self.portal_path):] for r in redirects]
         except:  # noqa: E722
             pass
+
+    def _load_registry_app(self, filename):
+        try:
+            f = open(filename)
+            txt = f.read()
+            f.close()
+        except Exception as e:
+            print('_load_registry_app failed on {}: {}'.format(filename, e))
+            raise
+            # return ""
+        txt = txt.replace("\'s", ' s')
+        txt = txt.replace("\'", '"')
+        txt = txt.replace('\n', '')
+        txt = txt.replace('\\u2013', '-')
+        txt = txt.replace('\\u2018', '-')
+        txt = txt.replace('\\u2019', '-')
+        txt = txt.replace('None', 'null')
+        txt = txt.replace('True', 'true')
+        txt = txt.replace('False', 'false')
+        txt = txt.replace(' u"', ' "')
+        txt = txt.decode('utf-8-sig', errors='ignore')
+        txt = self.decode(txt)
+        lst = [i for i in txt.split(' ') if i.startswith('\\u')]
+        if len(lst) > 0:
+            import pdb; pdb.set_trace()
+        try:
+            txt = json.loads(txt)
+        except Exception as e:
+            import pdb; pdb.set_trace()
+        return txt
+
+    def _process_form_values(self, form_values):
+        result = {}
+        if form_values is None:
+            return result
+
+        for form_value in form_values:
+            # print('get_member_container_review: form_value: {}'.format(form_value))
+            fid = form_value['fid']
+            fid_items = fid.split('_')
+            if len(fid_items[0]) == 32:
+                fid = '_'.join(fid_items[1:])
+            if form_value.get('form'):
+                if len(form_value.get('form', [])) == 1:
+                    result[fid] = form_value['form'][0]
+                elif len(form_value.get('form', [])) > 1:
+                    subforms = []
+                    for item in form_value.get('form', []):
+                        # if item.get('vocabulary_words', None) is None and item.get('data', None) is None and len(item.get('ftitle', '')) == 0:
+                        if item.get('data', None) is None:
+                            # Empty record
+                            continue
+                        subforms.append(item)
+                    if len(subforms) == 0:
+                        result[fid] = form_value['form'][0]
+                    elif len(subforms) == 1:
+                        result[fid] = subforms[0]
+                    else:
+                        result[fid] = subforms
+                        # raise RuntimeError('get_member_container_review: more than one subform found for {}'.format(fid))
+            else:
+                result[fid] = form_value
+
+        return result
+
+    def get_member_container_review(self):
+        # cwd = os.getcwd()
+        # app_spec = self._load_registry_app('{}/../../src/collective.jsonify/collective/jsonify/json.app.txt'.format(cwd))
+        # org_spec = self._load_registry_app('{}/../../src/collective.jsonify/collective/jsonify/json.org.txt'.format(cwd))
+        adict = {
+            'organisation':  {},
+            'version_and_state': {
+                'application': {
+                    'serial_number': "",
+                    'date': "",
+                    'type': "",
+                },
+                'review_state': {
+                    'iteration': "",
+                    'progress': "",
+                    'review_state': [],
+                },
+            },
+            'repository': {
+                'repository_type': {},
+                'repository_description': {},
+                'repository_community': {},
+                'level_performed': {},
+                'partners': {},
+                'changes': {},
+                'other_info': {},
+            },
+            'application':  {},
+            'criteria':  [],
+            'feedback':  {}
+        }
+        # Prep - pull all relevant data
+        organisation_prep = self._process_form_values(self.context['form_values'])
+        prep_dict = {'application': {}, 'criteria': []}
+        for obj in self.context.values():
+            if not hasattr(obj, 'portal_type'):
+                print('get_member_container_review: no portal_type: {}'.format(obj.id))
+                continue
+            elif obj.portal_type == 'Application':
+                # print('get_member_container_review: found application: {}'.format(obj.id))
+                prep_dict['application'] = self._process_form_values(obj['form_values'])
+                for child in obj.values():
+                    # print('get_member_container_review: found {}: {}'.format(child.id, child.portal_type))
+                    if child.portal_type == 'Review':
+                        prep_dict['criteria'].append(self._process_form_values(child['form_values']))
+            else:
+                print('get_member_container_review: unprocessed portal_type: {}'.format(obj.portal_type))
+                    
+        # # Arrange output
+        for key in organisation_prep.keys():
+            if organisation_prep[key]['ftype'] in ['Pulldown', 'TextLine', 'Text']:
+                title = organisation_prep[key].get('ftitle')
+                adict['organisation'][title] = organisation_prep[key]['data']
+            elif organisation_prep[key]['ftype'] in ['Description', 'Title']:
+                pass
+                # print('get_member_container_review: ignore organaization {} item {}'.format(
+                #     organisation_prep[key]['ftype'],
+                #     organisation_prep[key]['ftitle']))
+            else:
+                import pdb; pdb.set_trace()
+
+        # Arrange data into criteria
+        prep_dict_2 = {}
+        keys = prep_dict['application'].keys()
+        keys.sort()
+        for key in keys:
+            if not key.startswith('r'):
+                continue
+            if not key[1].isdigit():
+                continue
+            crit_num = key.split('_')[0]
+            if crit_num not in prep_dict_2.keys():
+                prep_dict_2[crit_num] = {}
+            key_dict = {
+                'key': key,
+                'app': prep_dict['application'][key]
+            }
+            for idx, criteria in enumerate(prep_dict['criteria']):
+                key_dict[idx + 1] = criteria[key]
+            prep_dict_2[crit_num][key] = key_dict
+            
+        # Arrange data into criteria
+        crit_dict = {}
+        keys = prep_dict_2.keys()
+        keys.sort()
+        for crit_num in keys:
+                criterium = prep_dict_2[crit_num]
+                crit_dict[crit_num] = key_dict = {'ToBeDeleted': criterium}
+
+                compliance_key = "{}_compliance".format(crit_num)
+                if compliance_key in criterium.keys():
+                    key_dict['Compliance Level'] = {}
+                    item = criterium[compliance_key]['app']
+                    if item is not None:
+                        if item.get('ftype', '') == 'Pulldown':
+                            if item.get('data', ''):
+                                key_dict['Compliance Level']['Applicant Claim'] = int(item['data'].split(' ')[0])
+                        else:
+                            raise RuntimeError('Applicant compliance level should only be a PullDown: {}'.format(item))
+                            # key_dict['Compliance Level']['Comment'] = val
+                    for rev_key in criterium[compliance_key].keys():
+                        if rev_key == 'app' or rev_key == 'key':
+                            continue
+                        rev_name = "Reviewer {}".format(rev_key)
+                        if  rev_key in criterium[compliance_key].keys():
+                            key_dict['Compliance Level'][rev_name] = {}
+                            items = criterium[compliance_key][rev_key]
+                            if type(items) != list:
+                                items = [items]
+                            for item in items:
+                                data = item['data']
+                                if data is not None:
+                                    if item['ftype'] == 'Pulldown':
+                                        key_dict['Compliance Level'][rev_name]['Assessed Level'] = int(data.split(' ')[0])
+                                    else:
+                                        key_dict['Compliance Level'][rev_name]['Comment'] = data
+
+                repsonse_key = "{}_response".format(crit_num)
+                if repsonse_key in criterium.keys():
+                    key_dict['Response'] = {
+                        'Applicant Notes': criterium[repsonse_key]['app']['data']
+                    }
+                    for rev_key in criterium[repsonse_key].keys():
+                        if rev_key == 'app' or rev_key == 'key':
+                            continue
+                        rev_name = "Reviewer {}".format(rev_key)
+                        if  rev_key in criterium[repsonse_key].keys():
+                            key_dict['Response'][rev_name] = criterium[repsonse_key][rev_key]['data']
+
+            
+        adict['prep_dict'] = prep_dict
+        # adict['prep_dict_2'] = prep_dict_2
+        adict['criteria'] = crit_dict
+        self['review'] = adict
