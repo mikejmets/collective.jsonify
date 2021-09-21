@@ -72,31 +72,38 @@ def get_children(self):
 
     portal_type = self.REQUEST.form.get('portal_type', None)
     children = []
+    broken = []
     if getattr(aq_base(self), 'objectIds', False):
         values = self.values()
         # Btree based folders return an OOBTreeItems
         # object which is not serializable
         # Thus we need to convert it to a list
-        children = []
         for child in values:
             if portal_type is None or (hasattr(child, 'portal_type') and child.portal_type == portal_type):
                 adict = {
                     'id': child.id,
                     'title': child.title,
                     'children_url': '{}/get_children'.format(child.absolute_url()),
-                    'item_url': '{}/get_item'.format(child.absolute_url())
+                    'item_url': '{}/get_item'.format(child.absolute_url()),
+                    'portal_type': child.portal_type,
                 }
-                if portal_type == 'MemberContainer':
+                if False and portal_type == 'MemberContainer':
                     url = adict['item_url']
                     try:
                         response = urlopen(url)
                         values = response.read()
                         context_dict = json.loads(values)
-                        adict['review'] = context_dict['review']
+                        adict['reviews'] = context_dict['reviews']
                     except Exception as e:
-                        raise RuntimeError('Error acceessing id {} url {}: {}'.format(child.id, url, e))
+                        # raise RuntimeError('Error acceessing id {} url {}: {}'.format(child.id, url, e))
+                        print('Error acceessing id {} url {}: {}'.format(child.id, url, e))
+                        # broken.append({'id': child.id, 'url': url, 'error': e})
+                        # broken.append({'id': child.id, 'url': url})
+                        broken.append({'id': child.id})
                 children.append(adict)
             
+    if len(broken):
+        children.append({'broken': broken})
     self.REQUEST.response.setHeader("Content-type", "application/json")
     return json.dumps(children)
 

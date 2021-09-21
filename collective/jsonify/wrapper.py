@@ -993,6 +993,34 @@ class Wrapper(dict):
 
         return result
 
+    def _get_repo_dict_item(self, key, title, in_dict, out_dict):
+        if key not in in_dict:
+            # print('_get_repo_dict_item: key {} not in {}'.format(key, in_dict))
+            return
+        item = in_dict[key]
+        if item['app'].get('ftype', '') in ['Text', ]:
+            out_dict[title] = {
+                'Applicant Response': item['app']['data']
+            }
+        elif item['app'].get('ftype', '') in ['MultiChoice', ]:
+            data = item['app']['data']
+            if data is not None:
+                result = []
+                for idx, datum in enumerate(data):
+                    result.append(datum)
+                out_dict[title] = {
+                    'Applicant Response': result
+                }
+        else:
+            raise RuntimeError('_get_repo_dict_item: unknown ftype "{}"'.format(item))
+
+        for rev_key in item.keys():
+            if rev_key == 'app' or rev_key == 'key':
+                continue
+            rev_name = "Reviewer {}".format(rev_key)
+            if  rev_key in item.keys():
+                out_dict[title][rev_name] = item[rev_key]['data']
+
     def get_member_container_review(self):
         # cwd = os.getcwd()
         # app_spec = self._load_registry_app('{}/../../src/collective.jsonify/collective/jsonify/json.app.txt'.format(cwd))
@@ -1011,16 +1039,15 @@ class Wrapper(dict):
                     'review_state': [],
                 },
             },
-            'repository': {
-                'repository_type': {},
-                'repository_description': {},
-                'repository_community': {},
-                'level_performed': {},
-                'partners': {},
-                'changes': {},
-                'other_info': {},
-            },
-            'application':  {},
+            # 'repository': {
+            #     'repository_type': {},
+            #     'repository_description': {},
+            #     'repository_community': {},
+            #     'level_performed': {},
+            #     'partners': {},
+            #     'changes': {},
+            #     'other_info': {},
+            # },
             'criteria':  [],
             'feedback':  {}
         }
@@ -1033,6 +1060,7 @@ class Wrapper(dict):
                 continue
             elif obj.portal_type == 'Application':
                 # print('get_member_container_review: found application: {}'.format(obj.id))
+                adict['version_and_state']['application']['date'] = obj.CreationDate()
                 prep_dict['application'] = self._process_form_values(obj['form_values'])
                 for child in obj.values():
                     # print('get_member_container_review: found {}: {}'.format(child.id, child.portal_type))
@@ -1043,87 +1071,144 @@ class Wrapper(dict):
                     
         # # Arrange output
         for key in organisation_prep.keys():
+            if not organisation_prep[key].get('ftitle', False):
+                print('get_member_container_review: ignore organaization no ftitle')
+                continue
+            if not organisation_prep[key].get('ftype', False):
+                print('get_member_container_review: ignore organaization {} not ftype'.format(
+                    organisation_prep[key]['ftitle']))
+                continue
             if organisation_prep[key]['ftype'] in ['Pulldown', 'TextLine', 'Text']:
                 title = organisation_prep[key].get('ftitle')
                 adict['organisation'][title] = organisation_prep[key]['data']
-            elif organisation_prep[key]['ftype'] in ['Description', 'Title']:
+            elif organisation_prep[key]['ftype'] in ['Description', 'Title', 'Empty']:
                 pass
                 # print('get_member_container_review: ignore organaization {} item {}'.format(
                 #     organisation_prep[key]['ftype'],
                 #     organisation_prep[key]['ftitle']))
             else:
-                import pdb; pdb.set_trace()
+                raise RuntimeError('Organization ftype {} unknown'.format(organisation[key]['ftype']))
 
         # Arrange data into criteria
         prep_dict_2 = {}
+        prep_dict_3 = {}
         keys = prep_dict['application'].keys()
         keys.sort()
         for key in keys:
-            if not key.startswith('r'):
-                continue
-            if not key[1].isdigit():
-                continue
-            crit_num = key.split('_')[0]
-            if crit_num not in prep_dict_2.keys():
-                prep_dict_2[crit_num] = {}
-            key_dict = {
-                'key': key,
-                'app': prep_dict['application'][key]
-            }
+            # if not key.startswith('r'):
+            #     continue
+            # if not key[1].isdigit():
+            #     continue
+            # crit_num = key.split('_')[0]
+            # if crit_num not in prep_dict_2.keys():
+            #     prep_dict_2[crit_num] = {} 
+
+            if key.startswith('r') and key[1].isdigit():
+                crit_num = key.split('_')[0]
+                if crit_num not in prep_dict_2.keys():
+                    prep_dict_2[crit_num] = {}
+                prep_dict_2[crit_num][key] = key_dict = {}
+            else:
+                if key not in prep_dict_3.keys():
+                    prep_dict_3[key] = key_dict = {}
+            key_dict['key'] = key
+            key_dict['app'] = prep_dict['application'][key]
             for idx, criteria in enumerate(prep_dict['criteria']):
                 key_dict[idx + 1] = criteria[key]
-            prep_dict_2[crit_num][key] = key_dict
             
         # Arrange data into criteria
         crit_dict = {}
         keys = prep_dict_2.keys()
         keys.sort()
         for crit_num in keys:
-                criterium = prep_dict_2[crit_num]
-                crit_dict[crit_num] = key_dict = {'ToBeDeleted': criterium}
+            criterium = prep_dict_2[crit_num]
+            crit_dict[crit_num] = key_dict = {}
+            # key_dict['ToBeDeleted'] = criterium
 
-                compliance_key = "{}_compliance".format(crit_num)
-                if compliance_key in criterium.keys():
-                    key_dict['Compliance Level'] = {}
-                    item = criterium[compliance_key]['app']
-                    if item is not None:
-                        if item.get('ftype', '') == 'Pulldown':
-                            if item.get('data', ''):
-                                key_dict['Compliance Level']['Applicant Claim'] = int(item['data'].split(' ')[0])
-                        else:
-                            raise RuntimeError('Applicant compliance level should only be a PullDown: {}'.format(item))
-                            # key_dict['Compliance Level']['Comment'] = val
-                    for rev_key in criterium[compliance_key].keys():
-                        if rev_key == 'app' or rev_key == 'key':
-                            continue
-                        rev_name = "Reviewer {}".format(rev_key)
-                        if  rev_key in criterium[compliance_key].keys():
-                            key_dict['Compliance Level'][rev_name] = {}
-                            items = criterium[compliance_key][rev_key]
-                            if type(items) != list:
-                                items = [items]
-                            for item in items:
-                                data = item['data']
-                                if data is not None:
-                                    if item['ftype'] == 'Pulldown':
-                                        key_dict['Compliance Level'][rev_name]['Assessed Level'] = int(data.split(' ')[0])
-                                    else:
-                                        key_dict['Compliance Level'][rev_name]['Comment'] = data
+            compliance_key = "{}_compliance".format(crit_num)
+            if compliance_key in criterium.keys():
+                key_dict['Compliance Level'] = {}
+                item = criterium[compliance_key]['app']
+                if item is not None:
+                    if item.get('ftype', '') == 'Pulldown':
+                        if item.get('data', ''):
+                            key_dict['Compliance Level']['Applicant Claim'] = int(item['data'].split(' ')[0])
+                    else:
+                        raise RuntimeError('Applicant compliance level should only be a PullDown: {}'.format(item))
+                        # key_dict['Compliance Level']['Comment'] = val
+                for rev_key in criterium[compliance_key].keys():
+                    if rev_key == 'app' or rev_key == 'key':
+                        continue
+                    rev_name = "Reviewer {}".format(rev_key)
+                    if  rev_key in criterium[compliance_key].keys():
+                        key_dict['Compliance Level'][rev_name] = {}
+                        items = criterium[compliance_key][rev_key]
+                        if type(items) != list:
+                            items = [items]
+                        for item in items:
+                            data = item['data']
+                            if data is not None:
+                                if item['ftype'] == 'Pulldown':
+                                    key_dict['Compliance Level'][rev_name]['Assessed Level'] = int(data.split(' ')[0])
+                                else:
+                                    key_dict['Compliance Level'][rev_name]['Comment'] = data
 
-                repsonse_key = "{}_response".format(crit_num)
-                if repsonse_key in criterium.keys():
-                    key_dict['Response'] = {
-                        'Applicant Notes': criterium[repsonse_key]['app']['data']
-                    }
-                    for rev_key in criterium[repsonse_key].keys():
-                        if rev_key == 'app' or rev_key == 'key':
-                            continue
-                        rev_name = "Reviewer {}".format(rev_key)
-                        if  rev_key in criterium[repsonse_key].keys():
-                            key_dict['Response'][rev_name] = criterium[repsonse_key][rev_key]['data']
+            repsonse_key = "{}_response".format(crit_num)
+            if repsonse_key in criterium.keys():
+                key_dict['Response'] = {
+                    'Applicant Notes': criterium[repsonse_key]['app']['data']
+                }
+                for rev_key in criterium[repsonse_key].keys():
+                    if rev_key == 'app' or rev_key == 'key':
+                        continue
+                    rev_name = "Reviewer {}".format(rev_key)
+                    if  rev_key in criterium[repsonse_key].keys():
+                        key_dict['Response'][rev_name] = criterium[repsonse_key][rev_key]['data']
 
-            
-        adict['prep_dict'] = prep_dict
+        # Arrange data into repository info
+        repo_dict = {}
+        key = "repository_type"
+        title = "Repository Type"
+        self._get_repo_dict_item(key, title, prep_dict_3, repo_dict)
+
+        key = "designated_community"
+        title = "Brief Description of the Repositorys Designated Community"
+        self._get_repo_dict_item(key, title, prep_dict_3, repo_dict)
+
+        key = "type_comments"
+        title = "Brief Description of Repository"
+        self._get_repo_dict_item(key, title, prep_dict_3, repo_dict)
+
+        key = "curation"
+        title = "Level of Curation Performed"
+        self._get_repo_dict_item(key, title, prep_dict_3, repo_dict)
+
+        key = "curation_comments"
+        title = "Comments on Level of Curation Performed"
+        self._get_repo_dict_item(key, title, prep_dict_3, repo_dict)
+
+        key = "outsource"
+        title = "Insource/Outsource Partners"
+        self._get_repo_dict_item(key, title, prep_dict_3, repo_dict)
+
+        key = "other_info"
+        title = "Other Relevant Information"
+        self._get_repo_dict_item(key, title, prep_dict_3, repo_dict)
+
+        # adict['prep_dict'] = prep_dict
         # adict['prep_dict_2'] = prep_dict_2
-        adict['criteria'] = crit_dict
-        self['review'] = adict
+        # adict['prep_dict_3'] = prep_dict_3
+        adict['repository_information'] = repo_dict
+        if 'r17' in crit_dict:
+            adict['feedback'] = crit_dict.pop('r17')['Response']
+        if 'Applicant Notes' in adict['feedback']:
+            adict['feedback']['Applicant Feedback'] = adict['feedback'].pop('Applicant Notes')
+        if 'Reviewer 1' in adict['feedback']:
+            adict['feedback']['Reviewer 1 Feedback'] = adict['feedback'].pop('Reviewer 1')
+        if 'Reviewer 2' in adict['feedback']:
+            adict['feedback']['Reviewer 2 Feedback'] = adict['feedback'].pop('Reviewer 2')
+        if prep_dict.get('application') == {}:
+            adict['version_and_state']['application'] = None
+        else:
+            adict['criteria'] = crit_dict
+        self['reviews'] = adict
