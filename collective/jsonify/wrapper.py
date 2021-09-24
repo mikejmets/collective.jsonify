@@ -4,6 +4,7 @@ import json
 from Products.CMFCore.utils import getToolByName
 import datetime
 import os
+from plone import api
 try:
     from plone.uuid.interfaces import IUUID
     HASPLONEUUID = True
@@ -24,6 +25,16 @@ except ImportError:
     from base64 import encodestring as b64encode
     def _base64encode(data):
         return b64encode(data)
+
+def _get_brains(context, portal_type, review_states):
+    catalog = api.portal.get_tool("portal_catalog")
+    path = '/'.join(context.getPhysicalPath())
+    brains = catalog( portal_type=portal_type, path=path) 
+    # review_state=review_states
+    print(path)
+    print(len(brains))
+    return brains
+
 
 class Wrapper(dict):
     """Gets the data in a format that can be used by the transmogrifier
@@ -1051,21 +1062,32 @@ class Wrapper(dict):
             'criteria':  [],
             'feedback':  {}
         }
+        catalog = api.portal.get_tool("portal_catalog")
         # Prep - pull all relevant data
         organisation_prep = self._process_form_values(self.context['form_values'])
-        prep_dict = {'application': {}, 'criteria': []}
+        prep_dict = {'application': {}, 'criteria': [], 'brain': []}
         for obj in self.context.values():
             if not hasattr(obj, 'portal_type'):
                 print('get_member_container_review: no portal_type: {}'.format(obj.id))
                 continue
             elif obj.portal_type == 'Application':
                 # print('get_member_container_review: found application: {}'.format(obj.id))
-                adict['version_and_state']['application']['date'] = obj.CreationDate()
                 prep_dict['application'] = self._process_form_values(obj['form_values'])
+
+                app_brain = catalog(UID=obj.UID())[0]
+                adict['version_and_state']['review_state']['progress'] = app_brain.review_state
+                adict['version_and_state']['application']['date'] = obj.CreationDate()[:10]
+                if app_brain.review_state == 'approved':
+                    adict['version_and_state']['application']['date'] = str(app_brain.getApprovedDate)[:10]
+                adict['version_and_state']['application']['serial_number'] = obj.UID()
+                adict['version_and_state']['application']['type'] = app_brain.getReviewType
+
                 for child in obj.values():
                     # print('get_member_container_review: found {}: {}'.format(child.id, child.portal_type))
                     if child.portal_type == 'Review':
                         prep_dict['criteria'].append(self._process_form_values(child['form_values']))
+                        review_brain = catalog(UID=child.UID())[0]
+                        adict['version_and_state']['review_state']['review_state'].append(review_brain.review_state)
             else:
                 print('get_member_container_review: unprocessed portal_type: {}'.format(obj.portal_type))
                     
