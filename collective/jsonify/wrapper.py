@@ -1041,7 +1041,9 @@ class Wrapper(dict):
             'version_and_state': {
                 'application': {
                     'serial_number': "",
-                    'date': "",
+                    'created': "",
+                    'modified': "",
+                    'approved_date': "",
                     'type': "",
                 },
                 'review_state': {
@@ -1076,9 +1078,10 @@ class Wrapper(dict):
 
                 app_brain = catalog(UID=obj.UID())[0]
                 adict['version_and_state']['review_state']['progress'] = app_brain.review_state
-                adict['version_and_state']['application']['date'] = obj.CreationDate()[:10]
+                adict['version_and_state']['application']['created'] = obj.CreationDate()[:10]
+                adict['version_and_state']['application']['modified'] = obj.ModificationDate()[:10]
                 if app_brain.review_state == 'approved':
-                    adict['version_and_state']['application']['date'] = str(app_brain.getApprovedDate)[:10]
+                    adict['version_and_state']['application']['approved_date'] = str(app_brain.getApprovedDate)[:10]
                 adict['version_and_state']['application']['serial_number'] = obj.UID()
                 adict['version_and_state']['application']['type'] = app_brain.getReviewType
 
