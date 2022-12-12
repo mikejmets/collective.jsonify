@@ -1074,8 +1074,8 @@ class Wrapper(dict):
                 continue
             elif obj.portal_type == 'Application':
                 # print('get_member_container_review: found application: {}'.format(obj.id))
+                
                 prep_dict['application'] = self._process_form_values(obj['form_values'])
-
                 app_brain = catalog(UID=obj.UID())[0]
                 adict['version_and_state']['review_state']['progress'] = app_brain.review_state
                 adict['version_and_state']['application']['created'] = obj.CreationDate()[:10]
@@ -1084,13 +1084,21 @@ class Wrapper(dict):
                     adict['version_and_state']['application']['approved_date'] = str(app_brain.getApprovedDate)[:10]
                 adict['version_and_state']['application']['serial_number'] = obj.UID()
                 adict['version_and_state']['application']['type'] = app_brain.getReviewType
-
+                adict['version_and_state']['reviews'] = []
                 for child in obj.values():
                     # print('get_member_container_review: found {}: {}'.format(child.id, child.portal_type))
                     if child.portal_type == 'Review':
                         prep_dict['criteria'].append(self._process_form_values(child['form_values']))
                         review_brain = catalog(UID=child.UID())[0]
                         adict['version_and_state']['review_state']['review_state'].append(review_brain.review_state)
+                        user_id = review_brain.listCreators[0]
+                        user = api.user.get(user_id)
+                        name  = user.getProperty('fullname', '').decode('utf-8')
+                        review_dict = {
+                                'review_state': review_brain.review_state,
+                                'reviewer': name
+                        }
+                        adict['version_and_state']['reviews'].append(review_dict)
             else:
                 print('get_member_container_review: unprocessed portal_type: {}'.format(obj.portal_type))
                     
