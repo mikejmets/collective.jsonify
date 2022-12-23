@@ -1090,15 +1090,40 @@ class Wrapper(dict):
                     if child.portal_type == 'Review':
                         prep_dict['criteria'].append(self._process_form_values(child['form_values']))
                         review_brain = catalog(UID=child.UID())[0]
+                        # review_obj = review_brain.getObject()
                         adict['version_and_state']['review_state']['review_state'].append(review_brain.review_state)
-                        user_id = review_brain.listCreators[0]
-                        user = api.user.get(user_id)
-                        name  = user.getProperty('fullname', '').decode('utf-8')
+                        user = api.user.get(review_brain.id)
                         review_dict = {
                                 'review_state': review_brain.review_state,
-                                'reviewer': name
+                                'reviewer': user.getProperty('fullname', '').decode('utf-8'),
+                                'email': user.getProperty('email', ''),
                         }
                         adict['version_and_state']['reviews'].append(review_dict)
+
+                users = []
+                group_id = ""
+                local_roles = self.context.get_local_roles()
+                for role in local_roles:
+                    if 'Owner' not in role[1]:
+                        continue
+                    if role[0].startswith('M_'):
+                        group_id = role[0]
+                        break
+                    # else:
+                    #     users.append(api.user.get(userid=role[0]))
+
+                if group_id:
+                    users = api.user.get_users(groupname=group_id)
+
+                owners = []
+                if users:
+                    for user in users:
+                        owners.append({
+                            'id': user.id,
+                            'email': user.getProperty('email', '').decode('utf-8'),
+                            'fullname': user.getProperty('fullname', ''),
+                        })
+                adict['owners'] = owners
             else:
                 print('get_member_container_review: unprocessed portal_type: {}'.format(obj.portal_type))
                     
