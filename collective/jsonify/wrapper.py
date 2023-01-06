@@ -635,6 +635,10 @@ class Wrapper(dict):
                 self['_owner'] = self.context.getOwner(info=1)[1]
         except:
             pass
+        if self.get('_owner'):
+            user = api.user.get(self['_owner'])
+            self['_owner_fullname'] = user.getProperty('fullname', '').decode('utf-8')
+            self['_owner_email'] = user.getProperty('email', '')
 
     def get_workflowhistory(self):
         """Workflow history
@@ -962,12 +966,13 @@ class Wrapper(dict):
         txt = txt.decode('utf-8-sig', errors='ignore')
         txt = self.decode(txt)
         lst = [i for i in txt.split(' ') if i.startswith('\\u')]
-        if len(lst) > 0:
-            import pdb; pdb.set_trace()
+        # if len(lst) > 0:
+        #     import pdb; pdb.set_trace()
         try:
             txt = json.loads(txt)
         except Exception as e:
-            import pdb; pdb.set_trace()
+            raise
+            # import pdb; pdb.set_trace()
         return txt
 
     def _process_form_values(self, form_values):
@@ -1097,6 +1102,7 @@ class Wrapper(dict):
                                 'review_state': review_brain.review_state,
                                 'reviewer': user.getProperty('fullname', '').decode('utf-8'),
                                 'email': user.getProperty('email', ''),
+                                'id': review_brain.id
                         }
                         adict['version_and_state']['reviews'].append(review_dict)
 
